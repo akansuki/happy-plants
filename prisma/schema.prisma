@@ -1,0 +1,127 @@
+// Happy Plants — Prisma schema
+// Households share plants. Users sign in with Google; first sign-in creates a household.
+// Invitations let an email pre-join a household before that user has ever signed in.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// --- Auth.js (NextAuth) models ---
+
+model User {
+  id            String       @id @default(cuid())
+  name          String?
+  email         String       @unique
+  emailVerified DateTime?
+  image         String?
+
+  householdId   String?
+  household     Household?   @relation(fields: [householdId], references: [id], onDelete: SetNull)
+
+  accounts      Account[]
+  sessions      Session[]
+  careEvents    CareEvent[]
+
+  createdAt     DateTime     @default(now())
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// --- Domain models ---
+
+model Household {
+  id          String        @id @default(cuid())
+  name        String
+  createdAt   DateTime      @default(now())
+
+  members     User[]
+  plants      Plant[]
+  invitations Invitation[]
+}
+
+// An invitation pre-authorizes an email to join a household.
+// When that email signs in with Google, the signIn callback consumes the invite.
+model Invitation {
+  id          String     @id @default(cuid())
+  email       String     // normalized to lowercase
+  householdId String
+  household   Household  @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  createdAt   DateTime   @default(now())
+  acceptedAt  DateTime?
+
+  @@unique([email, householdId])
+  @@index([email])
+}
+
+model Plant {
+  id          String       @id @default(cuid())
+  householdId String
+  household   Household    @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  name        String
+  species     String?
+  description String?
+  photoUrl    String?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  careEvents  CareEvent[]
+
+  @@index([householdId])
+}
+
+enum CareType {
+  WATER
+  FERTILIZE
+}
+
+model CareEvent {
+  id        String   @id @default(cuid())
+  plantId   String
+  plant     Plant    @relation(fields: [plantId], references: [id], onDelete: Cascade)
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  type      CareType
+  notes     String?
+  createdAt DateTime @default(now())
+
+  @@index([plantId, createdAt])
+  @@index([createdAt])
+}
