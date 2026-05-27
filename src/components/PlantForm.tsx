@@ -6,6 +6,7 @@ import { Camera } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input, Label, Textarea } from "@/components/ui/Input";
 import { createPlant, updatePlant, type ActionResult } from "@/app/actions/plants";
+import { resizeImage } from "@/lib/resize-image";
 
 type Initial = {
   id?: string;
@@ -19,14 +20,34 @@ export function PlantForm({ initial }: { initial?: Initial }) {
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const [photoPreview, setPhotoPreview] = useState<string | null>(initial?.photoUrl ?? null);
+  const [isResizing, setIsResizing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
+  async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => setPhotoPreview(reader.result as string);
-    reader.readAsDataURL(file);
+
+    setError(null);
+    setIsResizing(true);
+    try {
+      const resized = await resizeImage(file, 1600, 0.85);
+
+      // Replace the input's file with the resized one so the form submission
+      // sends the smaller version, not the original.
+      if (fileInputRef.current) {
+        const dt = new DataTransfer();
+        dt.items.add(resized);
+        fileInputRef.current.files = dt.files;
+      }
+
+      const reader = new FileReader();
+      reader.onload = () => setPhotoPreview(reader.result as string);
+      reader.readAsDataURL(resized);
+    } catch (err) {
+      setError((err as Error).message || "Could not process image");
+    } finally {
+      setIsResizing(false);
+    }
   }
 
   function onSubmit(formData: FormData) {
@@ -111,8 +132,14 @@ export function PlantForm({ initial }: { initial?: Initial }) {
       ) : null}
 
       <div className="flex gap-3">
-        <Button type="submit" disabled={isPending} className="flex-1">
-          {isPending ? "Saving…" : initial?.id ? "Save changes" : "Add plant"}
+        <Button type="submit" disabled={isPending || isResizing} className="flex-1">
+          {isResizing
+            ? "Processing photo…"
+            : isPending
+            ? "Saving…"
+            : initial?.id
+            ? "Save changes"
+            : "Add plant"}
         </Button>
         <Link
           href={initial?.id ? `/plants/${initial.id}` : "/"}
